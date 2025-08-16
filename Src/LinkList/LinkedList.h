@@ -150,11 +150,13 @@ static inline void LList_Free(LListNode_t* this)
 /********************************************************************
  * @brief		释放整个链表
  ********************************************************************/
+extern int malloc_count;
 static inline void LList_DeleteAll(LListRoot_t* root)
 {
 	LListNode_t* this = NULL;
 	LList_ForEach(root, this, {
 		this = LList_Delete(this);
+		malloc_count--;
 	});
 }
 

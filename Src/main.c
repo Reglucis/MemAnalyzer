@@ -53,25 +53,36 @@ typedef struct {
 MapInfo_t ThisMapInfo = {.load_regions = LLIST_STATIC_ROOTINIT(ThisMapInfo.load_regions), .objects = LLIST_STATIC_ROOTINIT(ThisMapInfo.objects)};
 MapInfo_t LastMapInfo = {.load_regions = LLIST_STATIC_ROOTINIT(LastMapInfo.load_regions), .objects = LLIST_STATIC_ROOTINIT(LastMapInfo.objects)};
 
+int malloc_count = 0;
+
 void GetRegionInfo(LListRoot_t* root)
 {
 	Region_t* region = (Region_t*)malloc(sizeof(Region_t));
+	malloc_count++;
 	LList_PointToSelf(&(region->node));
 	memset(region, 0, sizeof(Region_t));
-	if (strstr(_line_text, "Load Region") != NULL) {
+	char* token = strtok(_line_text, " (),");
+	if (!strcmp(token, "Load")) {
 		region->type = 'L';
 	} else {
 		region->type = 'E';
 	}
-	char* temp_p = strstr(_line_text, "Region ");
-	memcpy_s(region->name, sizeof(region->name), temp_p + 7, strstr(_line_text, " (") - strstr(_line_text, "Region ") - 7);
-	char temp_str[11] = {0};
-	memcpy_s(temp_str, sizeof(temp_str), strstr(_line_text, "Base: ") + 6, 10);
-	region->base = strtoul(temp_str, NULL, 16);
-	memcpy_s(temp_str, sizeof(temp_str), strstr(_line_text, "Size: ") + 6, 10);
-	region->size = strtoul(temp_str, NULL, 16);
-	memcpy_s(temp_str, sizeof(temp_str), strstr(_line_text, "Max: ") + 5, 10);
-	region->max = strtoul(temp_str, NULL, 16);
+	while (token != NULL) {
+		if (!strcmp(token, "Region")) {
+			token = strtok(NULL, " (),");
+			memcpy(region->name, token, strlen(token));
+		} else if ((!(strcmp(token, "Base:") && strcmp(token, "base:"))) && region->base == 0) {
+			token		 = strtok(NULL, " (),");
+			region->base = strtoul(token, NULL, 16);
+		} else if (!strcmp(token, "Size:")) {
+			token		 = strtok(NULL, " (),");
+			region->size = strtoul(token, NULL, 16);
+		} else if (!strcmp(token, "Max:")) {
+			token		= strtok(NULL, " (),");
+			region->max = strtoul(token, NULL, 16);
+		}
+		token = strtok(NULL, " (),");
+	}
 	LList_AddToTail(root, &(region->node));
 }
 
@@ -79,9 +90,10 @@ void SearchLoadRegion(FILE* mapfile, LListRoot_t* load_regions)
 {
 	LoadRegion_t* loadregion = NULL;
 	while (strstr(_line_text, "=======") == NULL) {
-		if (strstr(_line_text, "Region ") != NULL) {
-			if (strstr(_line_text, "Load") != NULL) {
+		if (strstr(_line_text, "Load Region") || strstr(_line_text, "Execution Region")) {
+			if (strstr(_line_text, "Load Region") != NULL) {
 				loadregion = (LoadRegion_t*)malloc(sizeof(LoadRegion_t));
+				malloc_count++;
 				LList_PointToSelf(&(loadregion->node));
 				LList_PointToSelf(&(loadregion->load_region));
 				LList_AddToTail(load_regions, (LListNode_t*)loadregion);
@@ -101,8 +113,8 @@ void print_progress(int current, int total, int stacksize, int heapsize)
 {
 	const int bar_width = 75;
 	float progress		= (float)current / total;
-	int stackpos		= ((float)stacksize) / total * bar_width;
-	int heappos			= ((float)heapsize) / total * bar_width;
+	int stackpos		= ceil(((float)stacksize) / total * bar_width);
+	int heappos			= ceil(((float)heapsize) / total * bar_width);
 	int pos				= progress * bar_width;
 
 	printf("[");
@@ -130,11 +142,12 @@ int main(int argc, char* argv[])
 	while ((ch = getopt(argc, argv, "vhp:")) != -1) {
 		switch (ch) {
 			case 'v':
-				printf("测试版本，版本号未知\n");
+				printf("Ver0.01		By RegLucis\n");
 				return 0;
 
 			case 'h':
-				printf("帮助\n");
+				printf("请将 .map 文件与 .htm 文件置于同一文件夹中并使用 -p 指定目标相对路径或绝对路径\n");
+				printf("o 代表栈空间, □ 代表堆空间\n");
 				return 0;
 
 			case 'p':
@@ -159,6 +172,7 @@ int main(int argc, char* argv[])
 			goto __exit;
 		}
 		mapfile_dir = (char*)malloc(buff_len + strlen(_input_dir) + 2);
+		malloc_count++;
 		if (mapfile_dir == NULL) {
 			printf(ERROR_INFO(申请内存失败！));
 			retval = 2;
@@ -176,9 +190,9 @@ int main(int argc, char* argv[])
 	} else { // 有盘符
 		mapfile_dir = _input_dir;
 	}
-	DWORD attributes = GetFileAttributes(mapfile_dir);
-	if (attributes == INVALID_FILE_ATTRIBUTES || strstr(mapfile_dir, ".map") == NULL) {
-		printf(ERROR_INFO(找不到合法文件，请检查.map文件路径));
+	if (strstr(mapfile_dir, ".map") == NULL) {
+		printf("当前路径：%s \n", mapfile_dir);
+		printf(ERROR_INFO(请指定.map文件));
 		retval = 4;
 		goto __exit;
 	}
@@ -189,7 +203,7 @@ int main(int argc, char* argv[])
 	FILE* mapfile = fopen(mapfile_dir, "r");
 	if (mapfile == NULL) {
 		retval = 4;
-		printf(ERROR_INFO(map 文件无法打开));
+		printf(ERROR_INFO(无法打开 map 文件，请确认文件存在));
 		goto __exit;
 	}
 	fseek(mapfile, 0, SEEK_END);	// 设定流的位置为文件末尾
@@ -205,6 +219,7 @@ int main(int argc, char* argv[])
 		}
 	}
 
+	char* token			= NULL;
 	long temp			= ftell(mapfile);
 	long stack_location = 0;
 	long heap_location	= 0;
@@ -212,12 +227,20 @@ int main(int argc, char* argv[])
 	long heap_size		= 0;
 	while (ftell(mapfile) < filesize) {
 		fgets(_line_text, sizeof(_line_text), mapfile);
-		if (strstr(_line_text, "Heap_Mem") != NULL) {
-			heap_location = strtoul(_line_text + 41, NULL, 16);
-			heap_size	  = strtoul(_line_text + 69, NULL, 10);
-		} else if (strstr(_line_text, "Stack_Mem") != NULL) {
-			stack_location = strtoul(_line_text + 41, NULL, 16);
-			stack_size	   = strtoul(_line_text + 69, NULL, 10);
+		if (strstr(_line_text, "HEAP") || strstr(_line_text, "(HEAP)")) {
+			token		  = strtok(_line_text, " ");
+			token		  = strtok(NULL, " ");
+			heap_location = strtoul(token, NULL, 16);
+			token		  = strtok(NULL, " ");
+			token		  = strtok(NULL, " ");
+			heap_size	  = strtoul(token, NULL, 10);
+		} else if (strstr(_line_text, "STACK") || strstr(_line_text, "(STACK)")) {
+			token		   = strtok(_line_text, " ");
+			token		   = strtok(NULL, " ");
+			stack_location = strtoul(token, NULL, 16);
+			token		   = strtok(NULL, " ");
+			token		   = strtok(NULL, " ");
+			stack_size	   = strtoul(token, NULL, 10);
 		} else if (strstr(_line_text, "Global Symbols") != NULL) {
 			break;
 		}
@@ -236,7 +259,7 @@ int main(int argc, char* argv[])
 
 	/* 解析 Image component sizes */
 	/* 解析用户文件 */
-	char* token		 = NULL;
+
 	int rom_size	 = 0;
 	int ram_size	 = 0;
 	int name_len	 = 0;
@@ -255,7 +278,8 @@ int main(int argc, char* argv[])
 	}
 	fseek(mapfile, temp, SEEK_SET);
 	object_t** objects_array = (object_t**)malloc(sizeof(object_t*) * object_count);
-	object_count			 = 0;
+	malloc_count++;
+	object_count = 0;
 
 	while (ftell(mapfile) < filesize) {
 		fgets(_line_text, sizeof(_line_text), mapfile);
@@ -280,6 +304,7 @@ int main(int argc, char* argv[])
 			name_len = strrchr(token, 'o') - token;
 
 			objects_array[object_count] = (object_t*)malloc(sizeof(object_t) + name_len + 2);
+			malloc_count++;
 			LList_PointToSelf(&(objects_array[object_count]->node));
 			memcpy(objects_array[object_count]->name, token, name_len);
 			objects_array[object_count]->name[name_len]		= 'c';
@@ -324,7 +349,7 @@ int main(int argc, char* argv[])
 	mapfile = fopen(mapfile_dir, "r");
 	if (mapfile == NULL) {
 		retval = 1;
-		printf(ERROR_INFO(htm 文件无法打开));
+		printf(ERROR_INFO(无法打开 htm 文件，请确认文件存在));
 		goto __exit;
 	}
 	fseek(mapfile, 0, SEEK_END); // 设定流的位置为文件末尾
@@ -361,6 +386,7 @@ int main(int argc, char* argv[])
 			}
 			token  = strtok(_line_text, " ");
 			object = (object_t*)malloc(sizeof(object_t) + strlen(token) + 1);
+			malloc_count++;
 			LList_PointToSelf(&(object->node));
 			memcpy(object->name, token, strlen(token));
 			object->name[strlen(token)] = '\0';
@@ -494,14 +520,27 @@ __exit:
 			LList_ForEach(&(ThisMapInfo.load_regions), this, {
 				LList_DeleteAll((LListRoot_t*)(&(((LoadRegion_t*)this)->load_region)));
 				this = LList_Delete(this);
+				malloc_count--;
 			});
 			LList_DeleteAll(&(ThisMapInfo.objects));
+
+			LList_ForEach(&(LastMapInfo.load_regions), this, {
+				LList_DeleteAll((LListRoot_t*)(&(((LoadRegion_t*)this)->load_region)));
+				this = LList_Delete(this);
+				malloc_count--;
+			});
 			LList_DeleteAll(&(LastMapInfo.objects));
+			free(objects_array);
+			malloc_count--;
 		case 4:
 		case 3:
 		case 2:
-			free(mapfile_dir);
+			if (buff_len > 0) {
+				free(mapfile_dir);
+				malloc_count--;
+			}
 		default:
+			// printf("malloc_count: %d\n", malloc_count);
 			return retval;
 	}
 #pragma endregion

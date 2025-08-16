@@ -1,4 +1,4 @@
-Debug_Flag = 0
+Debug_Flag = 1
 CleanUp_Flag = 0
 
 TargetName = main
