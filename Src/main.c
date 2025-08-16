@@ -147,7 +147,8 @@ int main(int argc, char* argv[])
 
 			case 'h':
 				printf("请将 .map 文件与 .htm 文件置于同一文件夹中并使用 -p 指定目标相对路径或绝对路径\n");
-				printf("o 代表栈空间, □ 代表堆空间\n");
+				printf("■ 代表占用的空间，o 代表栈空间, □ 代表堆空间\n");
+				printf("反馈 bug 请在 https://github.com/Reglucis/MemAnalyzer 仓库内提交 issue\n");
 				return 0;
 
 			case 'p':
@@ -227,15 +228,16 @@ int main(int argc, char* argv[])
 	long heap_size		= 0;
 	while (ftell(mapfile) < filesize) {
 		fgets(_line_text, sizeof(_line_text), mapfile);
-		if (strstr(_line_text, "HEAP") || strstr(_line_text, "(HEAP)")) {
+		if (strstr(_line_text, " HEAP ") && strstr(_line_text, "(HEAP)")) {
 			token		  = strtok(_line_text, " ");
 			token		  = strtok(NULL, " ");
 			heap_location = strtoul(token, NULL, 16);
 			token		  = strtok(NULL, " ");
 			token		  = strtok(NULL, " ");
 			heap_size	  = strtoul(token, NULL, 10);
-		} else if (strstr(_line_text, "STACK") || strstr(_line_text, "(STACK)")) {
+		} else if (strstr(_line_text, " STACK ") && strstr(_line_text, "(STACK)")) {
 			token		   = strtok(_line_text, " ");
+			
 			token		   = strtok(NULL, " ");
 			stack_location = strtoul(token, NULL, 16);
 			token		   = strtok(NULL, " ");
